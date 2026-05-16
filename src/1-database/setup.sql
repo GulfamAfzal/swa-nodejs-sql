@@ -1,11 +1,3 @@
--- Create the database
-CREATE DATABASE CompanyDB;
-GO
-
--- Use the database
-USE CompanyDB;
-GO
-
 -- Create the Employees table
 CREATE TABLE Employees (
     Id INT PRIMARY KEY IDENTITY(1,1),
