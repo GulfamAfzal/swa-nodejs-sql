@@ -1,60 +1,53 @@
 require('dotenv').config(); 
 const express = require('express');
 const sql = require('mssql');
-const jwksRsa = require('jwks-rsa');
-const { expressjwt: jwt } = require('express-jwt');
 
 const app = express();
 app.use(express.json());
 
+// Enable CORS so your frontend can communicate with this API
 app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "Authorization, Origin, X-Requested-With, Content-Type, Accept");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     next();
 });
+
+// Database Connection String configuration setup
+const connectionString = process.env.DB_CONNECTION_STRING;
 
 const config = {
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     server: process.env.DB_SERVER,
     database: process.env.DB_DATABASE,
-    tenantId: process.env.TENANT_ID,
-    audience: process.env.AUDIENCE,
-    b2cPolicy: process.env.B2C_POLICY,
-    b2cTenant: process.env.B2C_TENANT_NAME,
     options: {
         encrypt: true,
         enableArithAbort: true
     }
 };
 
-const authenticateToken = jwt({
-    secret: jwksRsa.expressJwtSecret({
-        cache: true,
-        rateLimit: true,
-        jwksUri: `https://${config.b2cTenant}.b2clogin.com/${config.b2cTenant}.onmicrosoft.com/${config.b2cPolicy}/discovery/v2.0/keys`
-    }),
-    audience: `${config.audience}`,
-    issuer: `https://${config.b2cTenant}.b2clogin.com/${config.tenantId}/v2.0/`,
-    algorithms: ['RS256']
-});
+const getDbConfig = () => {
+    return connectionString ? connectionString : config;
+};
 
-
-app.get('/employees', authenticateToken, async (req, res) => {
+// ── GET ALL EMPLOYEES (B2C Authentication gate completely bypassed) ──
+app.get('/employees', async (req, res) => {
     try {
-        let pool = await sql.connect(config);
+        let pool = await sql.connect(getDbConfig());
         let result = await pool.request().query('SELECT * FROM Employees');
         res.json(result.recordset);
     } catch (err) {
-        console.log(err);
+        console.error("Database connection error:", err);
         res.status(500).send(err.message);
     }
 });
 
-app.post('/employees', authenticateToken, async (req, res) => {
+// ── CREATE NEW EMPLOYEE ──
+app.post('/employees', async (req, res) => {
     const { EmployeeId, FirstName, LastName, DateOfBirth, DateOfJoining, DepartmentName } = req.body;
     try {
-        let pool = await sql.connect(config);
+        let pool = await sql.connect(getDbConfig());
         await pool.request()
             .input('EmployeeId', sql.NVarChar, EmployeeId)
             .input('FirstName', sql.NVarChar, FirstName)
@@ -69,50 +62,9 @@ app.post('/employees', authenticateToken, async (req, res) => {
     }
 });
 
-app.put('/employees/:id', authenticateToken, async (req, res) => {
-    const { id } = req.params;
-    const { EmployeeId, FirstName, LastName, DateOfBirth, DateOfJoining, DepartmentName } = req.body;
-    try {
-        let pool = await sql.connect(config);
-        await pool.request()
-            .input('Id', sql.Int, id)
-            .input('EmployeeId', sql.NVarChar, EmployeeId)
-            .input('FirstName', sql.NVarChar, FirstName)
-            .input('LastName', sql.NVarChar, LastName)
-            .input('DateOfBirth', sql.Date, DateOfBirth)
-            .input('DateOfJoining', sql.Date, DateOfJoining)
-            .input('DepartmentName', sql.NVarChar, DepartmentName)
-            .query('UPDATE Employees SET EmployeeId = @EmployeeId, FirstName = @FirstName, LastName = @LastName, DateOfBirth = @DateOfBirth, DateOfJoining = @DateOfJoining, DepartmentName = @DepartmentName WHERE Id = @Id');
-        res.send('Employee updated successfully');
-    } catch (err) {
-        res.status(500).send(err.message);
-    }
-});
-
-app.delete('/employees/:id', authenticateToken, async (req, res) => {
-    const { id } = req.params;
-    try {
-        let pool = await sql.connect(config);
-        await pool.request()
-            .input('Id', sql.Int, id)
-            .query('DELETE FROM Employees WHERE Id = @Id');
-        res.send('Employee deleted successfully');
-    } catch (err) {
-        res.status(500).send(err.message);
-    }
-});
-
-app.get('/employees/:employeeId', authenticateToken, async (req, res) => {
-    const { employeeId } = req.params;
-    try {
-        let pool = await sql.connect(config);
-        let result = await pool.request()
-            .input('EmployeeId', sql.NVarChar, employeeId)
-            .query('SELECT * FROM Employees WHERE EmployeeId = @EmployeeId');
-        res.json(result.recordset);
-    } catch (err) {
-        res.status(500).send(err.message);
-    }
+// Root check to verify the API status directly in a browser window
+app.get('/', (req, res) => {
+    res.send('Backend API Server is successfully running and healthy!');
 });
 
 const port = process.env.PORT || 3000;
