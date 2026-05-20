@@ -1,0 +1,55 @@
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+
+variables:
+  # This matches the project key name we made on your SonarQube dashboard card
+  SONAR_PROJECT_KEY: 'swa-nodejs-sql'
+  SONAR_HOST_URL: 'http://sonarqube-gulfam.eastasia.azurecontainer.io:9000'
+
+stages:
+  - stage: SAST
+    displayName: 'Security - SAST (SonarQube)'
+    jobs:
+      - job: SonarScan
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: self
+            fetchDepth: 0  # Downloads full history so SonarQube can see who wrote which code lines
+
+          # Task 1: Connect to your SonarQube server using the connection name we saved in Azure DevOps
+          - task: SonarQubePrepare@5
+            displayName: 'Prepare SonarQube Analysis'
+            inputs:
+              SonarQube: 'sonarqube-connection'
+              scannerMode: 'CLI'
+              configMode: 'manual'
+              cliProjectKey: $(SONAR_PROJECT_KEY)
+              cliProjectName: 'Task App Backend'
+              extraProperties: |
+                sonar.sources=.
+                sonar.exclusions=**/node_modules/**
+
+          # Task 2: Run the engine to read your code for security vulnerabilities
+          - task: SonarQubeAnalyze@5
+            displayName: 'Run SonarQube Analysis'
+
+          # Task 3: Check if the code passes or fails against your TaskApp Enterprise Quality Gate
+          - task: SonarQubePublish@5
+            displayName: 'Publish Quality Gate Result'
+            inputs:
+              pollingTimeoutSec: '300'
+
+  - stage: BuildAndDeploy
+    displayName: 'Build & Deploy'
+    dependsOn: SAST
+    condition: succeeded()  # CRITICAL: This ensures this block ONLY runs if your code passes the Quality Gate scan!
+    jobs:
+      - job: Build
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - script: echo 'Security check passed! Building and deploying software...'
